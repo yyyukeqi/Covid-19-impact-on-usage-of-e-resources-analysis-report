@@ -1,0 +1,489 @@
+---
+title: "Statistical Analysis for Library Project"
+author: "Keqi Yu #1004244150"
+date: "14/02/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Contents
+
+This statistical analysis will include these in the content:
+
+1. Introduction 
+
+   - General information about the dataset Library
+   - General information about the data-cleaning
+
+2. Statistical Analysis
+
+   - Describe the original data
+   - Possible model selections 
+   - Model Diagnostic
+
+3. Conclusion
+
+   - Conclusion for the research question
+   - Limitations
+   
+
+# Introduction 
+
+
+Currently, many industries are experiencing the COVID-19 pandemic and some of them have to be closed due to safety issues, for example, libraries. In recent decades, scholarly materials have increasingly moved to an electronic format, and are accessible online to subscribers.  
+
+So, our purpose is to investigate whether the closure of the libraries due to the COVID-19 pandemic result in changes to usage of electronic resources in specific subject area. We will use the COUNTER usage reports that show use of licensed content by UofT affiliated users. We are going to use the monthly data for each journal for statistical analysis. Also, we will get Elsevier Subject Classifications using API key from Elsevier Developers. Then, due to the fact that since they subdivided very detail, there are too much subject levels which are more than 300 different subjects, we decide to use the subject abbreviation which has 27 different segments. According to these 27 levels, we divide them into four big subject levels named Top Level, including Physical Sciences and Engineering, Health Sciences, Life Sciences, and Social Sciences and Humanities. Furthermore, by matching the identifier print_ISSN, we can assign the subject levels to each journal. In order to figure out the impact of COVID-19, we will use two periods of reports to compare whether there are changes, which includes Jan-Apr,2019 and Jan-Apr,2020. Also, we consider March and April of 2020 as the month of Covid, since the university was closed at March, 2020. In order to distinguish Covid or not in our dataset, we add a new variable named covid, which has two levels including 0 (Not Covid) and 1 (Covid). 
+
+Note: Since our data is too big and time-consuming for some computers to generate all data-cleaning part. So, I will just provide the datasets that I generated when doing the data cleaning for subject levels which I store in the issn_subject dataset and matching process for the original data and subject levels which I stored in the usage dataset. Also, we further divide the usage data by year, which I store the 2019 data in the data19t dateset, and 2020 data in the data20t dataset. Usage dataset is the dataset I am going to use in further analysis. I will provide my Rcodes used to generate the subject levels using API keys and match monthly count data with subject levels in a separate rmarkdown file named DataCleaning.rmd. 
+
+
+
+
+```{r, include=FALSE}
+#install.packages("htmlwidgets")
+#install.packages("questionr")
+#install.packages("gridExtra")
+#install.packages("cowplot")
+#install.packages("plyr")
+#install.packages("dplyr")
+#install.packages("readxl")
+#install.packages("rccmisc")
+#install.packages("data.table")
+#install.packages("pscl")
+#install.packages("vcd")
+#install.packages("boot")
+#install.packages("countreg", repos="http://R-Forge.R-project.org")
+#install.packages("vcdExtra")
+#install.packages("DHARMa")
+library(DHARMa)
+library(vcdExtra)
+library(countreg)
+library(boot)
+library(vcd)
+library(stringr)
+library(tidyverse)
+library(readxl)
+library(gridExtra)
+library(cowplot)
+library(plyr)
+library(dplyr)
+library(readxl)
+library(rccmisc)
+library(data.table)
+library(pscl)
+library(parallel)
+options (future.globals.maxSize = 4000 * 1024^70)
+```
+
+
+
+```{r,include=FALSE}
+data19t <- read.csv("data19t.csv")
+data20t <- read.csv("data20t.csv")
+usage <- read.csv("usage.csv")
+data19t$Year <- as.character(data19t$Year)
+data19t$covid <- as.character(data19t$covid)
+data20t$Year <- as.character(data20t$Year)
+data20t$covid <- as.character(data20t$covid)
+usage$Year <- as.character(usage$Year)
+usage$covid <- as.character(usage$covid)
+data19t <- data19t %>% select(-X)
+data20t <- data20t %>% select(-X)
+usage <- usage %>% select(-X.1, -X,-subject.code,-dc.title)
+glimpse(usage)
+
+present <- usage %>% select(-reporting_period_total, -dc.title,-subject.abbrev, -subject.,-subject.code,-yop,-online_issn,-platform)
+```
+
+
+```{r}
+summary(usage)
+```
+
+\newpage
+
+# Statistical Analysis
+
+## Original data
+
+As we can see from the two plots below, all months seem to have the same pattern. There are excessive zeros in our data.
+
+```{r,echo=FALSE,fig.width=6, fig.height=4,warning=FALSE}
+ggplot(data19t, aes(monthly_counts, fill = Month)) + 
+  geom_histogram(bins = 30) + 
+  scale_x_log10() + 
+  ggtitle("Figure 1: Monthly Counts by Month Jan-Apr for 2019") +
+  facet_grid(Month ~ ., margins = TRUE, scales = "free")
+```
+
+
+```{r,echo=FALSE,fig.width=6, fig.height=4,warning=FALSE}
+ggplot(data20t, aes(monthly_counts, fill = Month)) + 
+  geom_histogram(bins = 30) + 
+  scale_x_log10() +
+  ggtitle("Figure 2: Monthly Counts by Month Jan-Apr for 2020") +
+  facet_grid(Month ~ ., margins = TRUE, scales = "free")
+```
+
+```{r}
+usage19_20 <- usage %>% dplyr::group_by(Top.Level) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))")
+ggplot(usage19_20, aes(y=total_counts, x=Top.Level)) +
+  geom_bar(stat="identity", fill = "steelblue")+
+  geom_text(aes(label=total_counts), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 3: Barplot of total counts by main subject areas") + 
+  scale_x_discrete(name ="Main Subject", labels=c("HS", "LS", "PSE","SSH","Others"))
+  ylab("Total Counts") + 
+  theme(axis.text.x = element_text(size = 10, angle = 45))
+```
+
+
+```{r}
+subb19 <- data19t %>% dplyr::group_by(Top.Level) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))")
+
+subb20 <- data20t %>% dplyr::group_by(Top.Level) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))")
+  
+subb19_20 <- rbind(subb19,subb20)
+year <- c("2019","2019","2019","2019","2019","2020","2020","2020","2020","2020")
+subb19_20 <- cbind(year, subb19_20) 
+
+ggplot(subb19_20, aes(fill=year, y=total_counts, x=Top.Level)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=total_counts), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 5: Barplot of total counts by main subject areas and Year") +
+  xlab("Main Subject") +
+  theme(axis.text.x = element_text(size = 10, angle = 30))
+```
+
+```{r}
+cov19 <- data19t %>% 
+  dplyr::group_by(Month) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))")
+
+cov20 <- data20t %>% 
+  dplyr::group_by(Month) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))")
+  
+cov19_20 <- rbind(cov19,cov20)
+year1 <- c("2019","2019","2019","2019","2020","2020","2020","2020")
+cov19_20 <- cbind(year1, cov19_20) 
+
+ggplot(cov19_20, aes(fill=year1, y=total_counts, x=Month)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=total_counts), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 4: Barplot of total counts by Month and Year") +
+  xlab("Month") 
+```
+
+```{r}
+covv19 <- data19t %>% dplyr::filter(Month == "Mar" | Month == "Apr") %>%
+  dplyr::group_by(Month, Top.Level) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))") %>%
+  dplyr::mutate(period = "non-Covid")
+
+covv20 <- data20t %>% dplyr::filter(Month == "Mar" | Month == "Apr") %>%
+  dplyr::group_by(Month, Top.Level) %>%
+  dplyr::summarise(sum(na.omit(monthly_counts))) %>%
+  dplyr::rename(total_counts = "sum(na.omit(monthly_counts))") %>%
+  dplyr::mutate(period = "Covid")
+  
+covv19_20 <- rbind(covv19,covv20)
+
+
+covv19_20 %>%
+  gather("Month", "total_counts",-Top.Level) %>%
+  ggplot(aes(Top.Level, total_counts , fill = Month)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  theme_bw() +
+  facet_wrap(~Top.Level,scales = "free_x")
+
+ggplot(cov19_20, aes(fill=year1, y=total_counts, x=Month)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=total_counts), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 4: Barplot of total counts by Month and Year") +
+  xlab("Month") 
+```
+
+## Possible Model Selection
+
+At first, there are a few analysis methods we might consider: OLS Regression, Ordinary Count Models(Poisson or Negative Binomial) and Zero-inflated Regression(Poisson or Negative Binomial).
+
+- OLS Regression - However, count data are highly non-normal, these might not be well estimated by OLS regression.
+
+- Ordinary Count Models
+  1) Poisson - However, the data is over-dispersed, Poisson Regression might not be appropriate.
+  2) Negative Binomial - However, there are excess zeros in our data, Negative Binomial might not be appropriate as well
+  
+- Zero-inflated Regressions
+  1) Zero-inflated Poisson Regression - However, the data is over-dispersed, Poisson Regression might not be appropriate as well.
+  2) Zero-inflated Negative Binomial Regression - Since the data looks over-dispersed and has excess zeros, Zero-inflated Negative Binomial Regression might be the most appropriate.
+
+In order to justify my conclusion above:
+
+We can assess the goodness of fit of the negative binomial model using the deviance. As we can see from the output, the deviance of the Poisson model is 51599830, which is much greater than the negative binomial 540631. This represents that the negative binomial model fits better than the Poisson, and it also has a deviance below the five percent critical value of 542426.6.
+
+
+```{r}
+#Poisson
+mod1 <- glm(monthly_counts ~ Month + Year + Top.Level + vendor + covid + Top.Level*Year, data = usage, family = "poisson")
+qchisq(0.95, df.residual(mod1))
+deviance(mod1)
+
+#Negative Binomial 
+mod2 <- MASS::glm.nb(monthly_counts ~ Month + Year + Top.Level + vendor + covid, data = usage)
+deviance(mod2)
+
+mod <- MASS::glm.nb(monthly_counts ~ Month + Year + Top.Level + vendor + covid + Top.Level * Year, data = usage)
+summary(mod)
+deviance(mod)
+```
+
+
+Then, we try to use the Zero-Inflated Negative Binomial Regression to fit the data, since it is for modeling count variables with excessive zeros and it is usually for over-dispersed count variables.
+
+
+A zero-inflated model assumes that zero outcome is due to two different processes. In this case, the two processes are that a subject has been used vs. not been used. If not been used, the only outcome possible is zero. If been used, it is then a count process. The expected count is expressed as a combination of the two processes:
+
+$$E(n_{usage} = k)  =  P(not been used) \times 0 + P(been used) \times E(y = k \mid been used)$$
+
+First of all, we are going to use the variables Top.Level(main subject levels), covid(covid or not), Month(Jan.-Apr.), Year(2019,2020), vendor to model the monthly count in the part of negative binomial model and the logit part of the model. 
+
+
+
+```{r}
+#zero-inflated negative binomial
+mod3 <- zeroinfl(monthly_counts ~ Top.Level + covid + Month + Year + vendor, 
+                 data =usage, dist = "negbin")
+```
+
+
+However, there is a warming that system is computationally singular, which indicates that the variables are very highly correlated. So, we would use Chi-Squared test of independence to check if two categorical variables are independent. 
+
+
+```{r}
+chisq.test(usage$Month,usage$Year)
+chisq.test(usage$Month,usage$Top.Level)
+chisq.test(usage$covid,usage$Top.Level)
+chisq.test(usage$Year,usage$covid)
+chisq.test(usage$Top.Level,usage$Year)
+```
+
+
+The results show that we can reject the null hypothesis and conclude that the variables Top.Level, covid and Year are, indeed, independent. So, we are going to use these two variables Top.Level (main subject levels), covid (covid or not) and Year (2019, 2020) to model the monthly count in the negative binomial model.
+
+
+```{r}
+#zero-inflated negative binomial
+mod4 <- zeroinfl(monthly_counts ~ Top.Level + covid + Year, data = usage, dist = "negbin")
+```
+
+```{r}
+summary(mod4)
+summary(mod)
+```
+
+
+Then, compared simple Negative Binomial Regression to Zero-Inflated Negative Binomial Regression by AIC and BIC, a lower AIC score and will be the better-fit model and a lower BIC means that a model is considered to be more likely to be the true model. Using both AIC and BIC, the simple Negative Binomial Regression would fit better than the Zero-Inflated Regression. This indicates that Negative Binomial Regression could explain the excessive zeros well. 
+
+
+```{r}
+LRstats(mod1,mod,mod4, sortby = "BIC")
+```
+
+So, we decide to use the Negative Binomial Regression to do further analysis.
+
+Negative binomial regression is for modeling count variables, usually for over-dispersed count outcome variables, that is when the conditional variance exceeds the conditional mean. 
+
+The log of the expected outcome is predicted with a linear combination of the predictors:
+ 
+$$ln(\widehat{monthly_counts_{i}}) = Intercept + b_{1} Month_{i} +  b_{2} I(Year = 2020) +b_{3} Top.Level_{i} + b_{4} vendor_{i} +  b_{5} I(covid = 1)$$ 
+
+Therefore,
+
+$$\widehat{monthly_counts_{i}} = e^{Intercept + b_{1} Month_{i} +  b_{2} I(Year = 2020) +b_{3} Top.Level_{i} + b_{4} vendor_{i} +  b_{5} I(covid = 1)}$$ 
+
+
+```{r}
+summary(mod)
+```
+
+- The predictors Month, Year, Top.Level, vendor and covid in the negative binomial regression model predicting number of monthly usage (count) are all significant predictors. 
+- The reference group is the journal with Health Science in the month of April of not Covid, with vendor Elsevier.
+- Compared to the April, the expected log count for January is 0.062648 lower, however, the expected log count for February, March are respectively 0.161733 and 0.288825 higher than the reference group (April).
+- The expected log count for Year 2020 is 0.467604 higher than the expected log count for Year 2019. 
+- The subject Health Science has a higher expected log count than other three subject Life Sciences,Physical Sciences and Engineering, and Social Sciences and Humanities holding other variables constant.
+- The vendor Sage, Springer, and Taylor and Francis have less expected log count than the reference group(vender Elsevier), but the vendor Wiley has a higher expected log count.
+- The period of Covid (Covid = 1) has an expected count of 0.104180 lower than that of non-Covid (covid = 0) holding other variables constant.
+
+
+Then, we can get the confidence intervals for the coefficients. We might be interested in looking at incident rate ratios rather than coefficients. To do this, we can exponential our model coefficients. 
+
+
+```{r}
+#Confidential interval
+(est <- cbind(Estimate = coef(mod), confint(mod)))
+exp(est)
+```
+
+
+The output above indicates that the incident rate for Year 2020 is 1.28 times the incident rate for the reference group (Year 2019). Likewise, the incident rates for Life Science, Physical Sciences and Engineering, Social Sciences and Humanities journals are respectively 0.75, 0.31, 0,83 times the incident rate for the reference group Health Science holding the other variables constant. Then, the incident rates for the month of Feb, Jan, and Mar are respectively 1.18, 0.94, 1.33 times the incident rate for the reference group Month April holding the other variables constant. In similar, the incident rates for the vendor Sage, Springer, Taylor and Francis, and Wiley are respectively 0.73, 0.17, 0.31, 1.31 times the incident rate for the reference group vendor Elsevier holding the other variables constant. Lastly, the period of Covid has 0.90 times the incident rate for the reference group (non-Covid).
+
+\newpage
+
+## Model Diagnostics 
+
+
+### Model Assumption
+
+- Negative Binomial Regression:
+
+1. Linearity in model parameters 
+2. Independence of individual observations
+3. Multiplicative effects of independent variables
+4. The conditional variance of the outcome variable exceeds the conditional mean
+
+
+### 1. Conditional Variance vs. Conditional Mean
+
+The conditional variance of the outcome variable is 20987.47, which exceeds the conditional mean 12.8008.
+
+```{r}
+mean(na.omit(usage$monthly_counts))
+var(na.omit(usage$monthly_counts))
+```
+
+
+### 2. Density Plot
+
+Obviously, the count data is highly non-normal.
+
+```{r}
+plot(density(resid(mod)), main = "Density Plot for Negative Binomial")
+```
+
+
+
+### 3. Test for Presence of Interactions
+
+As a quick check for interactions, fit the model with all two-way terms.
+
+```{r}
+#Testing for interaction
+modint <- MASS::glm.nb(monthly_counts ~ (Month + Year + Top.Level + vendor + covid)^2,
+                        data = usage)
+anova(modint)
+```
+
+```{r}
+LRstats(mod, modint)
+```
+
+The result of anova shows that all two-way terms seem to be significant. Also, based on the result of AIC and BIC, the model including interaction terms seems better than the simple model, however, the p-value is greater than 0.05, which indicates that the results may not be significant. So, we will continue to use the model without interactions.
+
+
+### 4. Nonlinearity diagnostics
+
+In order to check the assumption of linearity, we will use component-plus-residual plots. 
+
+
+```{r,message=FALSE}
+#Component-plus-residual plots
+car::crPlots(mod)
+```
+
+However, our explanatory variables are all binary/categorical variables, so we could not observe the non-linearity from the Component-plus-residual plots.
+
+### 5. Outliers, leverage and influence
+
+```{r}
+#influence plot
+car::influencePlot(mod, main = "Influence Plot")
+```
+
+Several observations (938381,938382) stand out with large residuals and several observation (958444,958471) have large leverages.
+
+
+### 6. Residual Plot
+
+
+The first plot is the Residuals vs Fitted plot and gives an indication if there are non-linear patterns. Clearly, the plot are not evenly distributed vertically. Positive values for the residual mean the prediction was too low, which due to the fact that monthly counts are typically very small, but there are some extreme values.
+
+The second plot is Normal Q–Q (quantile-quantile) Plot, as we discuss before, the count data is highly non-normal.
+
+The third plot is the Scale-Location plot and tests the linear regression assumption of equal variance (homoscedasticity). The red line is approximately horizontal, which the average magnitude of the standardized residuals is not changing much as a function of the fitted values. However, the spread around the red line vary with the fitted values, which means that the residuals do not have equal variance.
+
+The fourth plot is the Residuals vs Leverage plot. The result coincides with the result of the influence plot above. There are several observations with large residuals and large leverages. Removing them from the dataset would have a significant affect on the model.
+
+```{r,echo = FALSE}
+par(mfrow = c(2,2))
+plot(mod)
+```
+```{r}
+plot(mod4)
+```
+
+
+Here we see some very large residuals and a substantial deviance of the deviance residuals from the normal(Obviously count data are highly non-normal). Clearly, the residuals are not good, despite very large residuals, the rest is not around zero.
+
+```{r}
+par(mfrow = c(1,2))
+res <- residuals(mod, type = "pearson")
+plot(log(predict(mod)), res, 
+     main = "Residual vs. log(predict(Negative Binomial)")
+abline(h=0, lty=2)
+qqnorm(res)
+qqline(res)
+```
+
+```{r}
+par(mfrow = c(1,2))
+res1 <- residuals(mod4, type = "pearson")
+plot(log(predict(mod4)), res1, 
+     main = "Residual vs. log(predict(Zero-inflated Negative Binomial)")
+abline(h=0, lty=2)
+qqnorm(res1)
+qqline(res1)
+```
+
+
+
+```{r}
+simulationOutput <- simulateResiduals(fittedModel = mod)
+plot(simulationOutput)
+testDispersion(simulationOutput)
+```
+
+\newpage
+
+# Conclusion 
+
+In short, our purpose is to investigate whether the closure of the libraries due to the COVID-19 pandemic result in changes to usage of electronic resources in specific subject area. Based on our investigations and model analysis, the closure of the libraries due to the COVID-19 pandemic has resulted in changes to usage of electronic resources in specific subject area, especially the subject Health Science. It coincides the fact that due to the COVID-19 pandemic, there are more people accessing the electronic sources and researching related to Health Science. However, we can not conclude whether there is a increase or decrease on the number of total usage of E-resources due to the COVID-19 pandemic, since we only have two months of data which we consider them as Covid.
+
+## Limitations
+
+There are many limitations in our dataset:
+
+1. There are excessive zeros, and some very large data in the dataset, which largely affect our model's goodness.
+2. Since our dataset only contains the first 4 months of 2019 and 2020, the conclusion we made are only based on these eight months, which is lack of stringency. It is not appropriate to use only two months of usage to represent the whole COVID-19 period. Also, we are not able to detect when the COVID-19 pandemic actually happened. More data is needed for further analysis.
+3. We didn't consider the academics annual trends in our analysis. There is a finding suggesting high engagement particularly after inductions and at submission deadlines, and less usage in vacation periods. We should de-trend academics effects from our dataset.
+4. There are many missing values in our original data, as well the subject levels.
+5. Our model did not fulfill all the assumptions of negative binomial regressions. 
+
+
+
+
+
+

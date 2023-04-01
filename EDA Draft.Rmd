@@ -1,0 +1,693 @@
+---
+title: "Electronic Content Usage & the COVID-19 Pandemic"
+author: "Keqi Yu #1004244150"
+date: '2020-10-27'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+# Contents
+
+
+This exploratory data analysis is divided into the following five parts.
+  
+1. Introduction: Basic background of this research
+
+2. Sanity Check and Data Cleaning: Detailed decisions made during data cleaning 
+
+3. Preliminary insights
+
+4. Conclusion
+
+5. Next steps for further investigations.
+
+
+# Introduction
+
+
+Library assessment is a set of processes undertaken by library staff to measure whether resources and services have met library users’ expectations and identify how a library might need to improve. Assessment librarians will use their approaches to ensure the library’s collections, services and spaces reach their goals, meet user needs, and continue to improve. One of the methods is conducting data analysis by using Counting Online Usage of Networked Electronic Resources (COUNTER) usage report. The reports follow the industry standard for recording and reporting electronic resources use and governs formatting. These ensures that usage from different vendors/platforms can be compared and shows what is being accessed and how much.  Currently, many industries are experiencing the COVID-19 pandemic and some of them have to be closed due to safety issues, for example, libraries. In recent decades, scholarly materials have increasingly moved to an electronic format, and are accessible online to subscribers.  
+
+So, our purpose is to investigate whether the closure of the libraries due to the COVID-19 pandemic result in changes to usage of electronic resources in specific subject area. We will use the COUNTER usage reports that show use of licensed content by UofT affiliated users and one Elsevier subject classification dataset. In order to figure out the impact of COVID-19, we will use two periods of reports to compare whether there are changes, which includes Jan-Apr,2019 and Jan-Apr,2020.
+
+
+
+```{r, include=FALSE}
+#install.packages("htmlwidgets")
+#install.packages("questionr")
+#install.packages("gridExtra")
+#install.packages("cowplot")
+library(stringr)
+library(tidyverse)
+library(readxl)
+library(gridExtra)
+library(cowplot)
+```
+
+```{r,include=FALSE}
+data <- read.csv("combined 2.csv")
+datasub <- read_excel("elsevier_jnlsubject.xls")
+da <- read_excel("ext_list_October_2020.xlsx")
+glimpse(data)
+glimpse(datasub)
+glimpse(da)
+unique(data$vendor)
+```
+
+
+
+# Data Cleaning
+
+###For new combined dataset:
+
+Overall, the new combined dataset have 1244061 observations and 65 variables, including vendor, collection, file, title, publisher, publisher_id, platform, doi, proprietary_id, print_issn, online_issn, uri, metric_type, reporting_period_total, jan.2019, feb.2019, mar.2019, apr.2019, jan.2020, feb.2020, mar.2020, apr.2020, isbn, yop, data_type, access_type, is_archive, jan.2017, feb.2017, mar.2017, apr.2017, may.2017, jun.2017, jul.2017, aug.2017, sep.2017, oct.2017, nov.2017, dec.2017, jan.2018, feb.2018, mar.2018, apr.2018, may.2018, jun.2018, jul.2018, aug.2018, sep.2018, oct.2018, nov.2018, dec.2018, may.2019, jun.2019, jul.2019, aug.2019, sep.2019, oct.2019, nov.2019, dec.2019, journal_doi,  proprietary_identifier, reporting_period_html, reporting_period_pdf, book_doi and issn. 
+
+For the variable metric_type, there are five levels, which are Total_Item_Requests, Unique_Item_Requests, Unique_Title_Requests, total_item_requests, unique_item_requests. Unique_item_Requests, Unique_Title_Requests and unique_item_requests mean investigations made during unique user sessions. Total_item_Requests and total_item_requests mean all investigation that have been made. However, it may be affected by user's devices, locations, browser and so on. The count of Unique_item_Requests, Unique_Title_Requests and unique_item_requests may not be accurate. As a result, we decide to only consider Total_item_Requests and total_item_requests. 
+
+After that, we begin to deal with missing value. First at all, we get the ratio of the number of missing values to total number from the dataset. The result shows in Table 1: the ratio of Missing values by variables. Since the variables publisher_id, uri, data_type, access_type, is_archive, journal_doi, proprietary_identifier, reporting_period_html, reporting_period_pdf, book_doi, issn miss more than 80% data, so we decide to remove these variables. It is because we will not use these variables for analysis, as there are too many missing values may resulting in inaccurate outcomes. The rest of variables are stored in total dataset, with 475461 observations and 65 variables.
+
+
+However, after we compare the dataset provided by each vendor and the combined dataset, we find that there are some duplicated entries in the combined dataset. So, after deleting the duplcates, it results a new total dataset, with 426463 observations and 65 variables.
+
+Then, due to the fact that there are four periods of time, from January 2017 to April 2020, so we select the data separately by year. As a result, there are 252003 observations and 24 variables in the dataset for 2019, in addition, 128631 observations and 16 variables in the dataset for 2020, 16147 observations and 24 variables in the dataset for 2017, 29682 observations and 24 variables in the dataset for 2028. We realize that missing value is implicit, so we use fct_explicit_na function to give missing values an explicit factor level. Furthermore, there are 4 major vendors since 2017, but there are 15 publishers in 2017, 111 publishers in 2018, 277 different publishers in 2019, 233 publishers in 2020. 
+
+However, fewer publishers listed in the report don’t mean few publishers in the library system, which indicates that users haven’t used these materials in that year unless they just published in later years. So, we decide to consider the journals being used in both 2019 and 2020 as well, since we calculate that there are 31005 journals almost half of the journals that being used in 2020 but not being used in 2019. We join data2019 and data2020 by the variables title, collection, platform to find the matching data, since the usage on multiple platforms is reported separately. The result dataset data2019_2020 now has 63282 observations and 26 variables.
+
+
+```{r}
+#Since we only care about total_item_requests, so filter
+unique(data$metric_type)
+target <- c("Total_Item_Requests","total_item_requests")
+
+total <- data %>% filter(metric_type %in% target)
+total<- total %>% filter(file != "Springer (All platforms) TR_B1 2019.xlsx" & file != "Springer (All platforms) TR_J1 2019.xlsx" & file != "Taylor & Francis Group (Informa) R5 TR_B1 2019.xlsx"  & file !=  "Springer TR_B1 Jan. - Apr. 2019 All Platforms NEW FILE.xlsx"  & file != "Springer TR_B1 Jan. -Apr. 2020 all platforms NEW FILE.xlsx" & file != "Springer TR_J1 Jan. -Apr. 2020 All Platforms NEW FILE.xlsx" & file != "Springer TR_J1 Jan.-Apr. 2019 All Platforms NEW FILE.xlsx" & file != "Taylor & Francis R5 TR_J1 2019.xlsx" & file != "Springer Nature.com JR1 2019 Jan - Apr.xlsx" & file != "Springer Nature (SpringerLink) TR_B1 Jan-Apr. 2019 REVISED.xlsx" & file != "Springer TR_B1 Jan-Apr 2019 SP.xlsx" & file != "Springer TR_J1 Jan-Apr 2019 SP.xlsx")
+
+#count the number of missing value in each variables
+knitr::kable(round(sapply(total,function(x) sum(is.na(x))/nrow(total)),2), caption = "the ratio of Missing values by Variables", col.names = "Ratio of Missing")
+
+#Since the variables publisher_id, uri, data_type, access_type, is_archive, journal_doi, proprietary_identifier, reporting_period_html, reporting_period_pdf, book_doi, issn missed more than 80% data, so we decide to remove these variables. 
+total <- total %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2019, feb.2019, mar.2019, apr.2019, jan.2020, feb.2020, mar.2020, apr.2020, jan.2017, feb.2017, mar.2017, apr.2017, may.2017, jun.2017, jul.2017, aug.2017, sep.2017, oct.2017, nov.2017, dec.2017, jan.2018, feb.2018, mar.2018, apr.2018, may.2018, jun.2018, jul.2018, aug.2018, sep.2018, oct.2018, nov.2018, dec.2018, may.2019, jun.2019, jul.2019, aug.2019, sep.2019, oct.2019, nov.2019, dec.2019)
+```
+
+
+```{r}
+#separate data by year
+data2019 <- total %>% 
+  filter(str_detect(file,"2019")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2019, feb.2019, mar.2019, apr.2019, may.2019, jun.2019, jul.2019, aug.2019, sep.2019, oct.2019, nov.2019, dec.2019) %>%
+  mutate(Year = 2019)
+data2020 <- total %>% 
+  filter(str_detect(file,"2020")) %>%
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total,jan.2020, feb.2020, mar.2020, apr.2020) %>%
+  mutate(Year = 2020)
+data2017 <- total %>% 
+  filter(str_detect(file,"2017")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2017, feb.2017, mar.2017, apr.2017, may.2017, jun.2017, jul.2017, aug.2017, sep.2017, oct.2017, nov.2017, dec.2017) %>%
+  mutate(Year = 2017)
+data2018 <- total %>% 
+  filter(str_detect(file,"2018")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2018, feb.2018, mar.2018, apr.2018, may.2018, jun.2018, jul.2018, aug.2018, sep.2018, oct.2018, nov.2018, dec.2018) %>%
+  mutate(Year = 2018)
+#check the file separate properly
+#unique(data2019$file) #32 different files
+#unique(data2020$file) #15 different files
+#unique(data2017$file) #4 different files
+#unique(data2018$file) #7
+#unique(total$file) #58 different files
+
+#gives missing values an explicit factor level 
+data2019[,1:9] <- lapply(1:9,function(x) fct_explicit_na(data2019[[x]]))
+data2020[,1:9] <- lapply(1:9,function(x) fct_explicit_na(data2020[[x]]))
+data2017[,1:9] <- lapply(1:9,function(x) fct_explicit_na(data2017[[x]]))
+data2018[,1:9] <- lapply(1:9,function(x) fct_explicit_na(data2018[[x]]))
+```
+
+```{r,message=FALSE,warning=FALSE}
+#Then, we want to compare the data for the same journals and e-books between 2019 and 2020.
+data20201 <- data2020 %>% select(Year,title,reporting_period_total,collection,platform)
+sum(! data20201$title %in% data2019$title)
+data2019_2020 <- inner_join(data2019,data20201, by =c("title","collection","platform"))
+```
+
+
+
+
+###For elsevier_jnlsubject dataset:
+
+Our research question is investigating the changes in specific subject areas. However, for the time being, we only have the subject data for the vendor Elsevier. There are 10612 observations and 9 variables in total. Top Level, Primary Level and Secondary Level are regard as main subject level, primary subject level, and secondary subject level. So, we determine to investigate the data we have for the subject classification. 
+
+First thing I do for the data is to convert character to factor, which is necessary for further analysis. Then, to deal with missing values, we get the ratio of the number of missing values to total number of the total data. The result shows in Table 2: the ratio of Missing values by variables. Since the variables Top Level, Primary Level, Secondary Level, Full Title, Unformatted ISSN, Product ID, Status don’t exist the missing values, so we will remain these variables at this time. In order to match combine dataset and elsevier_jnlsubject dataset for further analysis, we rename the variable ISSN to print_issn. An ISSN is an 8-digit code used to identify newspapers, journals, magazines and periodicals of all kinds and on all media - print and electronic.
+
+When we try to join data2019, data2020, and subject dataset by the identifier print_issn or online_issn, we realize that there are occasionally several titles that correspond to the same identifier print_issn or online_issn. So, the method we choose to deal with this is to considering additional identifiers, in this case, we use the combination of the variables isbn, print_issn and online_issn to distinguish between them. An ISBN is assigned to each separate edition and variation (except re-printings) of a publication. After doing this, we can uniquely identify journals, if there are still few instances where there are multiple associated titles for a given set of identifiers, since there are only a few cases, we will treat these as one unit of analysis. Furthermore, we join data2019, data2020 corresponding with subject dataset to match by title and print_issn, then create two new dataset subdata and subdata1. 	
+
+
+```{r,message=FALSE}
+#subject data: convert to character to factor and numeric
+datasub[,1:ncol(datasub)] <- lapply(1:ncol(datasub),function(x) as.factor(datasub[[x]]))
+
+#count the number of missing value in each variables
+knitr::kable(round(sapply(datasub,function(x) sum(is.na(x))/nrow(datasub)),2), caption = "the ratio of Missing values by Variables", col.names = "Ratio of Missing")
+
+#rename
+datasub <- datasub %>% rename(print_issn = ISSN) %>% 
+  select(`Top Level`,`Primary Level`,`Secondary Level`,`Full Title`,print_issn,`Unformatted ISSN`,`Product ID`,Status)
+```
+
+```{r,message=FALSE,warning=FALSE}
+
+#data2019 %>% select(title,isbn,print_issn,online_issn,reporting_period_total) %>% group_by(isbn,print_issn,online_issn) %>% summarise(n=n())
+
+unibook <- data2019 %>%
+  select(title,isbn,print_issn,online_issn,reporting_period_total) %>% 
+  group_by(title,isbn,print_issn,online_issn) %>% 
+  summarise(sum(reporting_period_total))
+
+subdata <- inner_join(unibook, datasub,by =c("print_issn","title"="Full Title"))
+sdy19 <- subdata %>% mutate(year = "2019")
+subdatatop <- subdata %>% group_by(`Top Level`) %>% 
+  summarise(sum(`sum(reporting_period_total)`)) %>% 
+  rename(reporting_period_total ="sum(`sum(reporting_period_total)`)")
+
+unibook1 <- data2020 %>%
+  select(title,isbn,print_issn,online_issn,reporting_period_total) %>% 
+  group_by(title,isbn,print_issn,online_issn) %>% 
+  summarise(sum(reporting_period_total))
+
+subdata1 <- inner_join(unibook1, datasub,by = c("print_issn","title"="Full Title"))
+sdy20 <- subdata1 %>% mutate(year = "2020") 
+subdatatop1 <- subdata1 %>% group_by(`Top Level`) %>% 
+  summarise(sum(`sum(reporting_period_total)`)) %>% 
+  rename(reporting_period_total ="sum(`sum(reporting_period_total)`)")
+
+sub <- rbind(sdy19,sdy20)
+sub <- sub %>% rename(reporting_period_total ="sum(reporting_period_total)")
+sub19_20 <- rbind(subdatatop,subdatatop1)
+year <- c("2019","2019","2019","2019","2020","2020","2020","2020")
+sub19_20 <- cbind(year, sub19_20)
+```
+
+
+### API Key
+
+```{r message=FALSE}
+source('subject_query_api.R')
+```
+
+```{r}
+api_key <- "6f0099862d4494f641208a98ea757ef7"
+```
+
+```{r}
+scopus_table <- get_subject_table()
+scidir_table <- get_subject_table(scopus = FALSE)
+```
+
+```{r,warning=FALSE}
+#issns <- as.character(na.omit(data2019$print_issn))
+issns<-c('0894-8321',"1062-1458","1062-1458", "1434-8411", "1058-9139", "1876-2859", "1076-6332")
+i = 1
+issn_subjust <-(ncol=7)
+n <- length(issns)
+length(issns)
+length(issn_res)
+issn_res
+issn_res %>% select(subject.,prism.issn)
+class(issn_res)
+issn_res<- get_subject_scopus(issns[2], api_key)
+rbind(issn_subjust,issn_res)
+for (i in 1:n){
+  tryCatch({
+    issn_res<- get_subject_scopus(issns[n], api_key)
+    cbind(3issn_res)
+    }, 
+    error = function(e) {
+      issn_res[n] <- "Error Thrown"
+    },
+    warming = function(w) {
+      return(NULL)
+    }
+  )
+}
+issn_res[1]
+as.data.frame(issn_res)
+issn_subject
+```
+
+
+```{r}
+issn_res <- issn_res %>% rename(`Secondary Level` = subject.)
+unique(datasub$`Top Level`)
+
+newsub <- datasub %>% distinct(`Top Level`, `Primary Level`, `Secondary Level`)
+newdata <- left_join(issn_res,newsub, by = "Secondary Level")
+
+clean_levels <- function(x){
+  x[str_detect(x, pattern = "Nursing")] <- "Nursing"
+  x[str_detect(x, pattern = "Engineering")] <- "Engineering"
+  return(x)
+}
+newdata %>% filter(str_detect(`Secondary Level`,"Engineering")) %>% mutate(`Top Level` = "Physical Sciences and Engineering")
+
+issn_res <- issn_res %>% 
+  mutate(`Secondary Level` = clean_levels(`Secondary Level`))
+newdata <- left_join(issn_res,newsub, by = "Secondary Level")
+```
+
+
+\newpage
+
+# Preliminary insights
+
+##For total data,
+
+### reporting_period_total
+
+
+At first, we want to investigate the pattern of reporting_period_total both Jan-Apr in 2019 and 2020.
+
+```{r,message = FALSE,warning=FALSE}
+#histogram
+c <- ggplot(data2019, aes(x=reporting_period_total)) + 
+  geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2019")
+d <- ggplot(data2020, aes(x=reporting_period_total)) + 
+   geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2020")
+title2 <- ggdraw() +
+  draw_label("Figure 1: Histogram of reporting_period_total by Year", 
+             fontface = 'bold', x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot2 <- plot_grid(c,d,ncol =2)
+plot_grid(title2, plot2,ncol =1,rel_heights = c(0.1, 1))
+```
+
+
+According to Figure 1: Histogram of reporting_period_total by Year, there are many extremely large outliers affecting the pattern of histogram, the data follows a extremely right-skewed distribution. 
+
+
+```{r,message = FALSE,warning=FALSE}
+#log
+e <- ggplot(data2019, aes(x=log(reporting_period_total))) + 
+  geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2019")
+f <- ggplot(data2020, aes(x=log(reporting_period_total))) + 
+   geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2020")
+title3 <- ggdraw() +
+  draw_label("Figure 2: Histogram of log(reporting_period_total) by Year", 
+             fontface = 'bold', x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot3 <- plot_grid(e,f,ncol =2)
+plot_grid(title3, plot3,ncol =1,rel_heights = c(0.1, 1))
+```
+
+
+Even when I computes logarithm of reporting_period_total, the histogram are still skewed to the right shown in Figure 2: Histogram of log(reporting_period_total) by Year, which means the original data are extremely right skewed. 
+
+```{r}
+#Boxplot
+a <- data2019 %>% ggplot(mapping = aes(x=Year,y=reporting_period_total)) +
+  geom_boxplot() +
+  ggtitle("2019")
+b <- data2020 %>% ggplot(mapping = aes(x=Year,y=reporting_period_total)) +
+  geom_boxplot() +
+  ggtitle("2020")
+title1 <- ggdraw() +
+  draw_label("Figure 3: Boxplots of reporting_period_total by Year",
+             fontface = 'bold',
+             x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot1 <- plot_grid(a,b,ncol =2)
+plot_grid(title1, plot1,ncol =1,rel_heights = c(0.1, 1))
+
+aa <- data2017 %>% ggplot(mapping = aes(x=Year,y=reporting_period_total)) +
+  geom_boxplot() +
+  ggtitle("2017")
+bb <- data2018 %>% ggplot(mapping = aes(x=Year,y=reporting_period_total)) +
+  geom_boxplot() +
+  ggtitle("2018")
+title1 <- ggdraw() +
+  draw_label("Figure 3: Boxplots of reporting_period_total by Year",
+             fontface = 'bold',
+             x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot11 <- plot_grid(aa,bb,ncol =2)
+plot_grid(title1, plot11,ncol =1,rel_heights = c(0.1, 1))
+```
+
+Also, when I tried to explore more on the pattern by boxplot shown in Figure 3: Boxplots of reporting_period_total by Year, the result coincides with the histogram. There are many extremely large outliers affecting the pattern of boxplots. We are not able to discover any difference between these two years.
+
+
+```{r}
+#description statistics table for reporting_period_total
+g <- data2019 %>% summarise(Year = 2019,
+                            sum = sum(reporting_period_total),
+                            min = min(reporting_period_total),
+                            '1st Qu.'= quantile(reporting_period_total,
+                                                probs = 0.25),
+                            mean = mean(reporting_period_total),
+                            median = median(reporting_period_total),
+                            '3rd Qu.' = quantile(reporting_period_total,
+                                                 probs = 0.75),
+                            max = max(reporting_period_total))
+h <- data2020 %>% summarise(Year = 2020,
+                            sum = sum(reporting_period_total),
+                            min = min(reporting_period_total),
+                            '1st Qu.'= quantile(reporting_period_total,
+                                                probs = 0.25),
+                            mean = mean(reporting_period_total),
+                            median = median(reporting_period_total), 
+                            '3rd Qu.'= quantile(reporting_period_total,
+                                                probs = 0.75), 
+                            max = max(reporting_period_total))
+knitr::kable(rbind(g,h),caption = "Description Statistics Table for reporting_period_total")
+#As we can see from description statistics table, for year 2020, there is higher mean.
+```
+
+From histograms from Figure 1 and 2, and boxplot from Figure 3, we cannot discover any big differences, but a extremely right-skewed data. 
+
+After conducting description statistics table shown in Table 3, reporting_period_total for 2020 is 4452697, which is higher than 3595982 in 2019. Also, mean for 2020 is 34.61605, which is larger than 29.19030 in 2019. The minimum, median, maximum, 1st and 3rd quartile value are quite similar. This appears that there may be an increase of online usages of journals and eBooks due to COVID-19. 
+
+In addition, when we observe reporting_period_total separately from each month from Jan. to Apr., there are also significant increases for all of the months, which shows in Figure 4: Barplot of reporting_period_total by months.
+
+```{r}
+mon19 <- data2019 %>% summarize(Jan = sum(Jan.19,na.rm = TRUE),
+                       Feb = sum(Feb.19,na.rm = TRUE),
+                       Mar = sum(Mar.19,na.rm = TRUE),
+                       Apr = sum(Apr.19,na.rm = TRUE))
+mon20 <- data2020 %>% summarize(Jan = sum(Jan.20,na.rm = TRUE),
+                       Feb = sum(Feb.20,na.rm = TRUE),
+                       Mar = sum(Mar.20,na.rm = TRUE),
+                       Apr = sum(Apr.20,na.rm = TRUE))
+mondf <- cbind(mon19,mon20)
+mondf <- as.data.frame(t(mondf))
+month <- c("Jan","Feb","Mar","Apr","Jan","Feb","Mar","Apr")
+mondf <- cbind(month, mondf)
+year <- c("2019","2019","2019","2019","2020","2020","2020","2020")
+mondf <- cbind(year, mondf)
+
+ggplot(mondf, aes(fill=year, y=V1, x=month)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=V1), vjust=1.6, color="white",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 4 :Barplot of reporting_period_total by months") +
+  xlab("Month") + ylab("reporting_period_total")
+```
+
+\newpage
+
+###Vendors
+
+Moreover, we would like to see whether the changes occurs within the vendors. So, we summarize total requests that have been made for each vendor in data2019 and data2020, as well min, mean, median, max of reporting_period_total, shown in Table 4: reporting_period_total by vendor. In order to make it visualized, we also plot a bar plot, shown in Figure 5: Barplots of reporting_period_total by Vendors, which can clearly see the changes.
+
+
+```{r,message=FALSE}
+#vendor
+ven19 <- data2019 %>% group_by(vendor) %>% summarise(Year = 2019,
+                                                     sum(reporting_period_total),
+                                                     min = min(reporting_period_total),
+                                                     mean = mean(reporting_period_total), 
+                                                     median = median(reporting_period_total), 
+                                                     max = max(reporting_period_total)) %>%
+  rename(reporting_period_total =`sum(reporting_period_total)`)
+ven20 <- data2020 %>% group_by(vendor) %>% summarise(Year =2020,
+                                                     sum(reporting_period_total),
+                                                     min = min(reporting_period_total),
+                                                     mean = mean(reporting_period_total), 
+                                                     median = median(reporting_period_total),
+                                                     max = max(reporting_period_total))  %>% 
+  rename(reporting_period_total =`sum(reporting_period_total)`)
+vendf <- rbind(ven19,ven20)
+knitr::kable(vendf[order(vendf$vendor), ],caption = "reporting_period_total by vendor")
+
+year <- c("2019","2019","2019","2019","2020","2020","2020","2020")
+
+ggplot(vendf, aes(fill=year, y=reporting_period_total, x=vendor)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=reporting_period_total), vjust=1.6, color="white",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 5: Barplot of reporting_period_total by Vendors") +
+  xlab("Vendor")
+```
+
+All of vendors are experiencing an increase of total usage of scholarly journals and eBooks, although there is a slight decrease on the mean of reporting_period_total for the vendor Springer. This may indicate that there may be an increase of online usages of journals and eBooks due to COVID-19. 
+
+
+###Publishers
+
+Then, we try to discover the variables publisher, and summarize total requests that have been made for each publisher in data2019 and data2020. There are 232 publishers in 2019 and 238 publishers in 2020. Some of them are increasing, and some of them are decreasing. By joining them, we can get the total number of publishers that people used in both years, which is 204 publishers. After calculating the number of publishers that has higher usage or higher mean in 2020 than 2019, there is 115/204 = 56.4% of publishers whose journals are experiencing an increase of usage and 110/204 = 53.9% of mean of publishers increasing. However, we cannot make conclusion at this point. 
+
+
+
+```{r,warning=FALSE}
+pub19 <- data2019 %>% group_by(publisher) %>% summarise(Year = 2019,
+                                                        sum(reporting_period_total), 
+                                                        min = min(reporting_period_total), 
+                                                        mean = round(mean(reporting_period_total),2), 
+                                                        median = median(reporting_period_total),
+                                                        max = max(reporting_period_total)) %>% 
+  rename(reporting_period_total =`sum(reporting_period_total)`)
+pub20 <- data2020 %>% group_by(publisher) %>% summarise(Year = 2020,
+                                                        sum(reporting_period_total), 
+                                                        min = min(reporting_period_total), 
+                                                        mean = round(mean(reporting_period_total),2), 
+                                                        median = median(reporting_period_total),
+                                                        max = max(reporting_period_total)) %>% 
+  rename(reporting_period_total =`sum(reporting_period_total)`)
+tab <- inner_join(pub19,pub20,by ="publisher")
+tab
+sum(tab$reporting_period_total.x < tab$reporting_period_total.y)
+sum(tab$mean.x < tab$mean.y)
+#For publishers, some of them are increasing, and some of them are decreasing. 
+```
+
+\newpage
+
+##For matching journals,
+
+
+Furthermore, as we mention in Data Cleaning part, we also want to compare the data that being requested for both two periods of time. So, we repeat the same histogram and Description Statistics Table. 
+
+###reporting_period_total for matching data
+
+```{r,warming = FALSE}
+#Histogram
+#Extremely right-skewed data
+i <- ggplot(data2019_2020, aes(x=reporting_period_total.x)) + 
+   geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2019")
+j <- ggplot(data2019_2020, aes(x=reporting_period_total.y)) + 
+  geom_histogram(aes(y =..density..)) +
+  geom_density(col=2) +
+  ggtitle("2020")
+title4 <- ggdraw() +
+  draw_label("Figure 6: Histogram of reporting_period_total by Year for matching journals", 
+             fontface = 'bold', x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot4 <- plot_grid(i,j,ncol =2)
+plot_grid(title4, plot4,ncol =1,rel_heights = c(0.1, 1))
+```
+
+```{r}
+#Boxplot
+m <- data2019_2020 %>% 
+  ggplot(mapping = aes(x=Year.x,y=reporting_period_total.x)) +
+  geom_boxplot() +
+  ggtitle("2019")
+n <- data2019_2020 %>% 
+  ggplot(mapping = aes(x=Year.y,y=reporting_period_total.y)) +
+  geom_boxplot() +
+  ggtitle("2020")
+title5 <- ggdraw() +
+  draw_label("Figure 7: Boxplots of reporting_period_total by Year for matching data",
+             fontface = 'bold',
+             x = 0, hjust = 0) +
+  theme(plot.margin = margin(0, 0, 0, 7))
+plot5 <- plot_grid(m,n,ncol =2)
+plot_grid(title5, plot5,ncol =1,rel_heights = c(0.1, 1))
+```
+
+```{r}
+k <- data2019_2020 %>% summarise(Year = 2019,
+                                 min = min(reporting_period_total.x),
+                                 '1st Qu.'= quantile(reporting_period_total.x,
+                                                     probs = 0.25),
+                                 mean = mean(reporting_period_total.x),
+                                 median = median(reporting_period_total.x),
+                                 '3rd Qu.'= quantile(reporting_period_total.x,
+                                                     probs = 0.75),
+                                 max = max(reporting_period_total.x))
+l <- data2019_2020 %>% summarise(Year = 2020,
+                                 min = min(reporting_period_total.y),
+                                 '1st Qu.'= quantile(reporting_period_total.y,
+                                                     probs = 0.25),
+                                 mean = mean(reporting_period_total.y),
+                                 median = median(reporting_period_total.y),
+                                 '3rd Qu.'= quantile(reporting_period_total.y,
+                                                     probs = 0.75),
+                                 max = max(reporting_period_total.y))
+knitr::kable(rbind(k,l), caption = "Description Statistics Table for reporting_period_total for matching journals")
+#As we can see from description statistics table, for year 2020, there is higher mean as well.
+```
+
+Based on the same right_skewed distribution shown in Figure 6: Histogram of reporting_period_total by Year for matching journals and Figure 7: Boxplots of reporting_period_total by Year for matching data, the pattern are also extremely skewed to the right and we still are not able to conclude any differences. However, for description statistics table shown in Table 5, for 2020, mean 58.52296 is clearly larger than mean 47.13518 in 2019. The minimum, median, maximum, 1st and 3rd quartile value are also quite similar. 
+
+###Vendors for matching data
+
+Then, investigation of vendors from matching data are also needed to compare with the previous part.  
+
+```{r}
+#vendor
+r <- data2019_2020 %>% group_by(vendor,Year.x) %>%
+  summarise(Year = 2019,
+            sum(reporting_period_total.x),
+            min = min(reporting_period_total.x), 
+            mean = mean(reporting_period_total.x),
+            median = median(reporting_period_total.x), 
+            max = max(reporting_period_total.x)) %>%
+  select(-Year.x) %>%
+  rename(reporting_period_total =`sum(reporting_period_total.x)`)
+s <- data2019_2020 %>% group_by(vendor,Year.y) %>%
+  summarise(Year = 2020,
+            sum(reporting_period_total.y),
+            min = min(reporting_period_total.y), 
+            mean = mean(reporting_period_total.y), 
+            median = median(reporting_period_total.y), 
+            max = max(reporting_period_total.y)) %>%
+  select(-Year.y) %>%
+  rename(reporting_period_total =`sum(reporting_period_total.y)`)
+vendf1 <- rbind(r,s)
+knitr::kable(vendf1[order(vendf1$vendor), ],caption = "reporting_period_total by Vendor for matching data")
+
+#Also by vendor, means of 2020 reporting_period_total for each 5 major vendors are higher than 2019. This means that 5 major vendors may experience increases in usage during the same period in two different years.
+```
+
+According to Table 6, the results are quite similar with the previous part, shown in Table 4: reporting_period_total by vendor. Total requests and means of 2020 reporting_period_total for each 5 major vendors are all higher than 2019. This means that the 5 major vendors may experience increases in usage during the same period in two different years due to COVID-19.
+
+###Publishers for matching data
+
+Then, for publishers, we also try to calculate the min, mean, median, max in the following. 
+
+```{r}
+#publisher 
+t <- data2019_2020 %>% group_by(publisher,Year.x) %>%
+  summarise(sum(reporting_period_total.x),
+            min = min(reporting_period_total.x), 
+            mean = round(mean(reporting_period_total.x),2),
+            median = median(reporting_period_total.x), 
+            max = max(reporting_period_total.x)) %>% 
+  rename(reporting_period_total =`sum(reporting_period_total.x)`)
+u <- data2019_2020 %>% group_by(publisher,Year.y) %>%
+  summarise(sum(reporting_period_total.y),
+            min = min(reporting_period_total.y), 
+            mean = round(mean(reporting_period_total.y),2), 
+            median = median(reporting_period_total.y), 
+            max = max(reporting_period_total.y)) %>% 
+  rename(reporting_period_total =`sum(reporting_period_total.y)`)
+pubdf <- rbind(t,u)
+pubdf[order(pubdf$publisher),]
+sum(t$mean < u$mean)
+sum(t$reporting_period_total < u$reporting_period_total)
+#There are 100 observations that the means of 2020 reporting_period_total by publishers is larger than the means of 2019, which is 100/189 = 52.9%. It indicates that more than half of publishers may have higher views. 
+```
+
+
+For each year, there are 189 different publishers whose journals being used. There are 100 observations that the total requests and means of 2020 reporting_period_total by publishers are larger than 2019, which is 100/189 = 52.9%. It indicates that more than half of publishers may have higher views during given periods.
+
+\newpage
+
+##For subject,
+
+
+After all the discoveries, we are going to investigate more deeply into subject areas part. 
+
+
+```{r,message=FALSE}
+ggplot(sub19_20, aes(fill=year, y=reporting_period_total, x=`Top Level`)) + 
+    geom_bar(position="dodge", stat="identity") +
+  geom_text(aes(label=reporting_period_total), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=3) +
+  ggtitle("Figure 8 :Barplot of reporting_period_total by main subject areas") +
+  xlab("Main Subject") +
+  theme(axis.text.x = element_text(size = 10, angle = 45))
+#As we can see based on the barplot of reporting_period_total by 'Top Level', despite small decreasings in 'Health Science', and 'Social Science and Humanities' areas, the other 2 subjects all experienced increases on reporting_period_total. Especially, Physical Science and Engineering has increased as twice as 2019.
+```
+
+
+As we can see from Figure 8 :Barplot of reporting_period_total by main subject areas, despite small decreases in both Health Science and Social Science and Humanities areas, the other 2 subjects Life Science and Physical Science and Engineering experience increases on reporting_period_total. Especially, Physical Science and Engineering has increased more than twice in 2019. This can also be told by the following table: Table 7: reporting_period_total by Top Level. However, when we glance the means of reporting_period_total, all of the means increase a lot, especially Physical Sciences and Engineering.
+
+
+```{r,warning=FALSE}
+#Based on only subject data we had right now
+#subject boxplot
+p <- sub %>% filter(year == 2019) %>% group_by(`Top Level`) %>% 
+  summarise(year = 2019,
+            sum = sum(reporting_period_total),
+            min = min(reporting_period_total),
+            mean = mean(reporting_period_total),
+            median = median(reporting_period_total), 
+            max = max(reporting_period_total))
+q <- sub %>% filter(year == 2020) %>% group_by(`Top Level`) %>%
+  summarise(year = 2020,
+            sum = sum(reporting_period_total),
+            min = min(reporting_period_total),
+            mean = mean(reporting_period_total),
+            median = median(reporting_period_total), 
+            max = max(reporting_period_total))
+subdf <- rbind(p,q)
+knitr::kable(subdf[order(subdf$`Top Level`),],caption = "reporting_period_total by Top Level")
+#As we can see from description statistics table, for year 2020, there are higher means for the subjects Life Sciences, Physical Sciences and Engineering and Social Sciences and Humanities.
+```
+
+
+
+
+\newpage
+
+
+# Conclusion
+
+
+Based on the current data we have and investigations we have done, we may conclude that the closure of the libraries due to the COVID-19 pandemic results in changes to usage of electronic resources in specific subject area. It is worth mentioning that Physical Sciences and Engineering subject has a dramatic increase during given periods from Jan.-Apr. 2019 to Jan.-Apr. 2020. However, due to the fact that we only have subject data for the vendor Elsevier, the conclusion may not be convinced.
+
+There is no doubt that total number of requests for journals and eBooks that have been made has increased.  uniquely identifying journals and eBooks may not be accurate. Also, for the Vendor level, total online usage of journals and eBooks shows an increase pattern. Then, higher requests that have been made appear on more than half of the publishers.
+
+
+# Next steps
+ 
+1. Investigations of the relationship between reporting_period_total and other variables. 
+e.g. more reporting_period_total may be due to the variable vendor. Bigger vendor will result in higher views.
+
+2. Subject level for other vendors
+e.g. if there are no more new data provided, manually subject assigned is necessary for future analysis. 
+
+3. Dependency in the data
+Participants who work at health science area are more likely access the journals and eBooks from health science area.
+e.g. GLMM model
+
+
+Potential Challenges:
+
+1. Any titles that show up in 2019 but not in 2020 are those that were available for access but 0 views in 2020. Similarly, assume the same for those that show up in 2020 but not in 2019, except those published in 2019 and 2020. When doing matching data, we didn't include these journals with 0 views during the analysis. 
+
+2. Due to a large number of missing values, some important messages may be missed.
+(For example, while uniquely identifying journals and eBooks, because of lots of missing values on identifiers(e.g.. print_issn, online_issn), the process may not be accurate. It will also affect further analysis.)
+
+3. Due to the fact that we only have the vendor Elsevier’s subject classification, the conclusions are not persuasive.
+(Because of limited data we have, we can only figure out the relationship between usage of electronic resources from the vendor Elsevier and the closure of the libraries due to the COVID-19 pandemic.)
+
+
+Next, we will begin to investigate the relationship between reporting_period_total and other variables. Then, trying to plot more figures to see the relationship with more variables. For subject, if there are no more new data provided, manually subject assigned is necessary for future analysis. 
+
+
+
+
+
+

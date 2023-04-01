@@ -1,0 +1,270 @@
+---
+title: "Data Cleaning"
+author: "Keqi Yu"
+date: "07/02/2021"
+output: html_document
+---
+
+### Subject Level using API Key
+
+```{r message=FALSE}
+source('subject_query_api.R')
+```
+
+```{r}
+api_key <- "8ca48bfb85b315da36930fb39cc2d5b7"
+```
+
+```{r}
+scopus_table <- get_subject_table()
+scidir_table <- get_subject_table(scopus = FALSE)
+```
+
+```{r,warning=FALSE}
+#issns <- as.character(na.omit(data2019$print_issn))
+#issns<-c("0894-8321","1062-1458", "1434-8411", "1058-9139", "1876-2859", "1076-6332","1058-9139","0155-9982","1006-7191")
+a = 601
+new_subject <- data_frame()
+for (a in 601:760){
+  issns <-data2019_2020$print_issn[76101:76304]
+  n <- length(issns)
+  for (i in 1:n){
+    tryCatch({
+    issn_res <- get_subject_scopus(issns[i], api_key)
+    }, 
+    error = function(e) {print("Error")}
+    )
+    new_subject <- rbindlist(list(new_subject,issn_res),fill = TRUE)
+  }
+}
+new_subject
+issn_subject <- rbind.fill(issn_subject,new_subject)
+write.csv(issn_subject, "issn_subject.csv")
+#issn_subject
+```
+
+```{r}
+issns <- data2019_2020$print_issn[1:200]
+n <- length(issns)
+for (i in 1:n){
+    tryCatch({
+    issn_res <- get_subject_scopus(issns[i], api_key)
+    }, 
+    error = function(e) { print("Error") }
+    )
+    issn_subject <- rbindlist(list(issn_subject,issn_res),fill = TRUE)
+}
+issn_subject
+```
+
+```{r}
+a = 601
+new_subject <- data_frame()
+for (a in 601:760){
+  issns <-data2019_2020$print_issn[a*100+1:a*100+100]
+  n <- length(issns)
+  for (i in 1:n){
+    tryCatch({
+    issn_res <- get_subject_scopus(issns[i], api_key)
+    }, 
+    error = function(e) {print("Error")}
+    )
+    new_subject <- rbindlist(list(new_subject,issn_res),fill = TRUE)
+  }
+}
+new_subject
+issn_subject <- rbind.fill(issn_subject,new_subject)
+```
+
+```{r}
+new_subject <- data_frame()
+issns <-data2019_2020$print_issn[76101:76304]
+n <- length(issns)
+for (i in 1:n){
+  tryCatch({
+    issn_res <- get_subject_scopus(issns[i], api_key)
+  }, 
+    error = function(e) {print("Error")}
+  )
+  new_subject <- rbindlist(list(new_subject,issn_res),fill = TRUE)
+}
+
+new_subject
+write.csv(issn_subject, "issn_subject.csv")
+#issn_subject
+```
+
+
+## Combining the data
+
+```{r,include=FALSE}
+data <- read.csv("combined 2.csv")
+datasub <- read_excel("elsevier_jnlsubject.xls")
+issn_subject1 <- read.csv("issn_subject.csv")
+#glimpse(data)
+#glimpse(datasub)
+issn_subject1 <- issn_subject1 %>% select(-X)
+issn_subject1 <- issn_subject1[!duplicated(issn_subject1),]
+```
+
+```{r}
+issn_subject <- issn_subject %>% mutate(`Top Level` = NA)
+for (i in 1:23777){
+  if (issn_subject1[i,]$subject.abbrev %in%  
+      c("CENG", "COMP","CHEM","MATE","EART","ENER","ENGI","MATH")){
+    issn_subject1[i,]$`Top Level` <- "Physical Sciences and Engineering"
+  } else if (issn_subject1[i,]$subject.abbrev %in%
+             c("PHYS","PHAR","MEDI","IMMU","HEAL","NURS","VETE","DENT")){
+    issn_subject1[i,]$`Top Level` <- "Health Sciences"
+  } else if (issn_subject1[i,]$subject.abbrev %in% c("BIOC","AGRI","NEUR","ENVI")){
+    issn_subject1[i,]$`Top Level` <- "Life Sciences"
+  } else if (issn_subject1[i,]$subject.abbrev %in% 
+             c("PSYC","SOCI","ECON","DECI","BUSI","ARTS")){
+    issn_subject[i,]$`Top Level` <- "Social Sciences and Humanities"
+  } 
+}
+knitr::kable(round(sapply(issn_subject,function(x) sum(is.na(x))/nrow(issn_subject)),2), caption = "the ratio of Missing values by Variables", col.names = "Ratio of Missing")
+
+issn_subject <- issn_subject %>% 
+  select(-dc.publisher,-prism.eIssn,-prism.issn..,-prism.issn...1)
+```
+
+
+```{r}
+taylor2020 <- read_excel("Taylor & Francis TR_J1 Jan-Apr 2020 SP.xlsx")
+taylor2020 <- taylor2020 %>% dplyr::rename(jan.2020 = `Jan-2020`, feb.2020 = `Feb-2020`,
+                                           mar.2020 = `Mar-2020`, apr.2020 = `Apr-2020`)
+taylor2020 <- taylor2020 %>% lownames()
+taylor2019 <- read_excel("Taylor & Francis TR_J1 Jan-Apr 2019 SP.xlsx")
+taylor2019 <- taylor2019 %>% dplyr::rename(jan.2019 = `Jan-2019`, feb.2019 = `Feb-2019`,
+                                           mar.2019 = `Mar-2019`, apr.2019 = `Apr-2019`)
+taylor2019 <- taylor2019 %>% lownames()
+sage2020 <- read_excel("Sage TR_J1 Jan-Apr 2020 SP.xlsx")
+sage2020 <- sage2020 %>% dplyr::rename(jan.2020 = `Jan-2020`, feb.2020 = `Feb-2020`, 
+                                       mar.2020 = `Mar-2020`, apr.2020 = `Apr-2020`)
+sage2020 <- sage2020 %>% lownames()
+sage2019 <- read_excel("Sage TR_J1 Jan-Apr 2019 SP.xlsx")
+sage2019 <- sage2019 %>% dplyr::rename(jan.2019 = `Jan-2019`, feb.2019 = `Feb-2019`, 
+                                       mar.2019 = `Mar-2019`, apr.2019 = `Apr-2019`)
+sage2019 <- sage2019 %>% lownames()
+revised <- rbind.fill(data, taylor2020, taylor2019, sage2020,sage2019)
+```
+
+```{r}
+#Since we only care about total_item_requests, so filter
+unique(revised$metric_type)
+target <- c("Total_Item_Requests","total_item_requests")
+
+total <- revised %>% filter(metric_type %in% target)
+
+#Remove duplicates
+total <- total %>% filter(file != "Springer (All platforms) TR_B1 2019.xlsx" &
+                           file != "Springer (All platforms) TR_J1 2019.xlsx" & 
+                           file != "Taylor & Francis Group (Informa) R5 TR_B1 2019.xlsx" & 
+                           file !=  "Springer TR_B1 Jan. - Apr. 2019 All Platforms NEW FILE.xlsx" & 
+                           file != "Springer TR_B1 Jan. -Apr. 2020 all platforms NEW FILE.xlsx" & 
+                           file != "Springer TR_J1 Jan. -Apr. 2020 All Platforms NEW FILE.xlsx" & 
+                           file != "Springer TR_J1 Jan.-Apr. 2019 All Platforms NEW FILE.xlsx" & 
+                           file != "Taylor & Francis R5 TR_J1 2019.xlsx" & 
+                           file != "Springer Nature.com JR1 2019 Jan - Apr.xlsx" & 
+                           file != "Springer Nature (SpringerLink) TR_B1 Jan-Apr. 2019 REVISED.xlsx" &
+                           file != "Springer TR_B1 Jan-Apr 2019 SP.xlsx" & 
+                           file != "Springer TR_J1 Jan-Apr 2019 SP.xlsx" & 
+                           file != "Elsevier  ScienceDirect TR_J1 2019 (Jan - April).xlsx" & 
+                           file != "Elsevier  ScienceDirect TR_J1 2019 SP NEW FILE.xlsx" & 
+                           file != "Elsevier TR_B1 2019 (Jan - April).xlsx" & 
+                           file != "Elsevier TR_B1 Jan-Apr 2019 SP.xlsx" & 
+                           file != "Sage Journals TR_J1 2019 Jan - Apr REVISED.xlsx")
+
+# Remove 2017 data
+total <- total %>% filter(!str_detect(file,"2017"))
+
+#count the number of missing value in each variables
+knitr::kable(round(sapply(total,function(x) sum(is.na(x))/nrow(total)),2), caption = "the ratio of Missing values by Variables", col.names = "Ratio of Missing")
+
+#Since the variables publisher_id, uri, data_type, access_type, is_archive, journal_doi, proprietary_identifier, reporting_period_html, reporting_period_pdf, book_doi, issn missed more than 80% data, so we decide to remove these variables. 
+total <- total %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2019, feb.2019, mar.2019, apr.2019, jan.2020, feb.2020, mar.2020, apr.2020, jan.2018, feb.2018, mar.2018, apr.2018, may.2018, jun.2018, jul.2018, aug.2018, sep.2018, oct.2018, nov.2018, dec.2018, may.2019, jun.2019, jul.2019, aug.2019, sep.2019, oct.2019, nov.2019, dec.2019)
+```
+
+
+```{r}
+#2019 data
+data20191 <- total %>% 
+  filter(str_detect(file,"2019")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2019) %>%
+  mutate(Month = "Jan",Year = "2019", covid = 0) %>%
+  dplyr::rename("monthly_counts" = jan.2019)
+data20192 <- total %>% 
+  filter(str_detect(file,"2019")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, feb.2019) %>%
+  mutate(Month = "Feb",Year = "2019", covid = 0) %>%
+  dplyr::rename("monthly_counts" = feb.2019)
+data20193 <- total %>% 
+  filter(str_detect(file,"2019")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, mar.2019) %>%
+  mutate(Month = "Mar",Year = "2019", covid = 0) %>%
+  dplyr::rename("monthly_counts" = mar.2019)
+data20194 <- total %>% 
+  filter(str_detect(file,"2019")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, apr.2019) %>%
+  mutate(Month = "Apr",Year = "2019", covid = 0) %>%
+  dplyr::rename("monthly_counts" = apr.2019)
+
+
+data20191 <- left_join(data20191, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20192 <- left_join(data20192, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20193 <- left_join(data20193, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20194 <- left_join(data20194, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+
+data19t <- rbind(data20191,data20192,data20193,data20194)
+write.csv(data19t, "data2019t.csv")
+```
+
+```{r}
+#2020 data
+data20201 <- total %>% 
+  filter(str_detect(file,"2020")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, jan.2020) %>%
+  mutate(Month = "Jan", Year = "2020", covid = 0) %>%
+  dplyr::rename("monthly_counts" = jan.2020)
+data20202 <- total %>% 
+  filter(str_detect(file,"2020")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, feb.2020) %>%
+  mutate(Month = "Feb", Year = "2020", covid = 0) %>%
+  dplyr::rename("monthly_counts" = feb.2020)
+data20203 <- total %>% 
+  filter(str_detect(file,"2020")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, mar.2020) %>%
+  mutate(Month = "Mar", Year = "2020", covid = 1) %>%
+  dplyr::rename("monthly_counts" = mar.2020)
+data20204 <- total %>% 
+  filter(str_detect(file,"2020")) %>% 
+  select(vendor, collection, file, title, publisher, platform, isbn, print_issn, online_issn, yop, reporting_period_total, apr.2020) %>%
+  mutate(Month = "Apr", Year = "2020", covid = 1) %>%
+  dplyr::rename("monthly_counts" = apr.2020)
+
+
+data20201 <- left_join(data20201, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20202 <- left_join(data20202, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20203 <- left_join(data20203, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+data20204 <- left_join(data20204, issn_subject1, by = c("print_issn" = "prism.issn"),
+                       na_matches ="never")
+
+data20t <- rbind(data20201,data20202,data20203,data20204)
+write.csv(data20t, "data20t.csv")
+```
+
+```{r}
+usage <- rbind(data19t,data20t)
+write.csv(usage, "usage.csv")
+```
+
+
