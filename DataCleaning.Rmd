@@ -12,7 +12,7 @@ source('subject_query_api.R')
 ```
 
 ```{r}
-api_key <- "8ca48bfb85b315da36930fb39cc2d5b7"
+api_key <- ""
 ```
 
 ```{r}
